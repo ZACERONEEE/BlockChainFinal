@@ -2,65 +2,64 @@
 pragma solidity ^0.8.20;
 
 contract Attendance {
-    struct Record {
-        string studentId;
+    address public admin;
+    uint256 public currentSessionId;
+
+    struct CheckIn {
         address student;
         uint256 timestamp;
+        string studentId;
     }
 
-    Record[] private allRecords;
+    // sessionId => list of check-ins
+    mapping(uint256 => CheckIn[]) private sessionRecords;
 
-    // Student ID => already checked in
-    mapping(string => bool) private checkedIn;
+    // sessionId => studentId => checkedIn
+    mapping(uint256 => mapping(string => bool)) private checkedIn;
 
-    event CheckedIn(string studentId, address student, uint256 timestamp);
+    event SessionStarted(uint256 sessionId, address admin, uint256 timestamp);
+    event CheckedIn(uint256 sessionId, string studentId, address student, uint256 timestamp);
 
+    constructor() {
+        admin = msg.sender; // ✅ teacher = deployer wallet
+        currentSessionId = 0;
+    }
+
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Only admin can do this");
+        _;
+    }
+
+    // ✅ Teacher starts a new session (resets attendance for a new class)
+    function startSession() external onlyAdmin {
+        currentSessionId += 1;
+        emit SessionStarted(currentSessionId, msg.sender, block.timestamp);
+    }
+
+    // ✅ Students check-in for the current session
     function checkIn(string calldata studentId) external {
+        require(currentSessionId > 0, "Session not started");
         require(bytes(studentId).length > 0, "Student ID required");
-        require(!checkedIn[studentId], "Already checked in");
+        require(!checkedIn[currentSessionId][studentId], "Already checked in");
 
-        checkedIn[studentId] = true;
+        checkedIn[currentSessionId][studentId] = true;
 
-        allRecords.push(
-            Record({
-                studentId: studentId,
+        sessionRecords[currentSessionId].push(
+            CheckIn({
                 student: msg.sender,
-                timestamp: block.timestamp
+                timestamp: block.timestamp,
+                studentId: studentId
             })
         );
 
-        emit CheckedIn(studentId, msg.sender, block.timestamp);
+        emit CheckedIn(currentSessionId, studentId, msg.sender, block.timestamp);
     }
 
-    // For your UI: 1 if checked-in, else 0
-    function getCheckInCount(string calldata studentId) external view returns (uint256) {
-        return checkedIn[studentId] ? 1 : 0;
+    function getSessionCount(uint256 sessionId) external view returns (uint256) {
+        return sessionRecords[sessionId].length;
     }
 
-    function hasCheckedIn(string calldata studentId) external view returns (bool) {
-        return checkedIn[studentId];
-    }
-
-    function getTotalCheckIns() external view returns (uint256) {
-        return allRecords.length;
-    }
-
-    // List ALL records (for table + export)
-    function getAllCheckIns()
-        external
-        view
-        returns (string[] memory ids, address[] memory students, uint256[] memory timestamps)
-    {
-        uint256 n = allRecords.length;
-        ids = new string[](n);
-        students = new address[](n);
-        timestamps = new uint256[](n);
-
-        for (uint256 i = 0; i < n; i++) {
-            Record storage r = allRecords[i];
-            ids[i] = r.studentId;
-            students[i] = r.student;
-            timestamps[i] = r.timestamp;
-        }
+    function hasCheckedIn(uint256 sessionId, string calldata studentId) external view returns (bool) {
+        return checkedIn[sessionId][studentId];
     }
 }
