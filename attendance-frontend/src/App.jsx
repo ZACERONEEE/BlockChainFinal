@@ -429,6 +429,17 @@ export default function App() {
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
                 Count is <span className="font-semibold">0 or 1</span> (duplicate blocked)
               </p>
+              <p className="mt-2 text-2xl font-bold">
+                {count === null
+                  ? "—"
+                  : count === 1
+                  ? "Already checked in"
+                  : "Not checked in yet"}
+              </p>
+
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                Duplicate attendance is automatically blocked
+              </p>
             </div>
 
             <div className="rounded-3xl border border-slate-200 bg-white/70 p-5 shadow-sm dark:border-white/10 dark:bg-white/5">
