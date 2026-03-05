@@ -159,18 +159,37 @@ export default function App() {
   }
 
   async function loadAttendanceList(sessionId) {
+  try {
     const c = await getContractRead();
-    const list = await c.getAttendance(sessionId);
-    // list items are objects: { student, timestamp, studentId }
-    const normalized = list.map((x) => ({
-      student: x.student,
-      timestamp: Number(x.timestamp),
-      studentId: x.studentId,
-    }));
+
+    // get all CheckedIn events for this contract
+    const filter = c.filters.CheckedIn();
+
+    const events = await c.queryFilter(filter, 0, "latest");
+
+    const records = events
+      .filter((e) => Number(e.args.sessionId) === Number(sessionId))
+      .map((e) => ({
+        student: e.args.student,
+        studentId: e.args.studentId,
+        timestamp: Number(e.args.timestamp),
+      }));
+
     // newest first
-    normalized.sort((a, b) => b.timestamp - a.timestamp);
-    setRows(normalized);
+    records.sort((a, b) => b.timestamp - a.timestamp);
+
+    setRows(records);
+
+  } catch (err) {
+    const msg =
+      err?.shortMessage ||
+      err?.reason ||
+      err?.message ||
+      "Failed to load attendance list";
+
+    notify("error", "Attendance load failed", msg);
   }
+}
 
   async function refreshInfo(loadList = true) {
     if (!provider) return;
@@ -296,6 +315,7 @@ export default function App() {
       setStatus(`Waiting confirmation… ${shortHash(tx.hash)}`);
 
       await tx.wait();
+      await refreshInfo(true);
 
       setStatus("Checked in ✅");
       notify("success", "Check-in recorded", `Session ${sidNum}: ${studentId.trim()}`);
