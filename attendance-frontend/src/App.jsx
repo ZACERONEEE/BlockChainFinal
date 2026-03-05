@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 
-// ✅ Sepolia deployed contract (your latest)
-const CONTRACT_ADDRESS = "0x7FAC22c4A0f6916196f7DaE5A9Dc12dfdcb576E9";
+// ✅ Replace with the NEW address from Sepolia deploy
+const CONTRACT_ADDRESS = "0x2F083cF692b274352a4B4afc9637FC2E731D5275";
 
-// ✅ ABI for the SIMPLE Attendance.sol you shared (no sessions)
+// ✅ ABI for SIMPLE Attendance.sol (NO admin, NO sessions)
 const ABI = [
   "function checkIn(string studentId)",
   "function getCheckInCount(string studentId) view returns (uint256)",
@@ -122,6 +122,7 @@ export default function App() {
   async function ensureSepolia() {
     if (!hasMM) return false;
     const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
+    // Sepolia = 11155111 = 0xaa36a7
     if (chainIdHex !== "0xaa36a7") {
       notify("warn", "Wrong network", "Switch MetaMask to Sepolia Test Network.");
       return false;
