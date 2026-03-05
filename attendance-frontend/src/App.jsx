@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 
-const CONTRACT_ADDRESS = "0x4a6d6bd2d40d92bb00e87638096dc73652659a836dd9ad7d13246c17891e0049";
+const CONTRACT_ADDRESS = "0x3793e242ca28F20007C5cfC7677e6382692f34b0";
 
 const ABI = [
   "function checkIn(string studentId)",
