@@ -427,7 +427,6 @@ export default function App() {
               </p>
               <p className="mt-2 text-4xl font-extrabold">{count ?? "—"}</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                <span className="font-semibold"></span> 
               </p>
               <p className="mt-2 text-2xl font-bold">
                 {count === null
