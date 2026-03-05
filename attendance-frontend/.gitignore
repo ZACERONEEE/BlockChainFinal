@@ -1,0 +1,46 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node dependencies
+node_modules/
+
+# Build outputs
+dist
+dist-ssr
+build/
+
+# Hardhat build files
+artifacts/
+cache/
+typechain/
+coverage/
+coverage.json
+
+# Environment variables
+.env
+.env.*
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+
+# Visual Studio / Windows files
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Package manager lock files (optional)
+pnpm-lock.yaml
+yarn.lock

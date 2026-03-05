@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes glowMove {
+  0% { transform: translate(-20%, -10%) scale(1); }
+  50% { transform: translate(10%, 10%) scale(1.1); }
+  100% { transform: translate(-20%, -10%) scale(1); }
+}
