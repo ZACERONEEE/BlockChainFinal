@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 
-// ✅ sessions contract deployed on Sepolia
-const CONTRACT_ADDRESS = "0x5d3c7097f23fcc8633a4DE03a7479E1A95588504";
+const CONTRACT_ADDRESS = "0x296D128012Ecca1924803e4Da3933cCf9e2EB45D";
 
-// ✅ ABI for sessions + teacher-only startSession
 const ABI = [
   "function admin() view returns (address)",
   "function currentSessionId() view returns (uint256)",
@@ -12,6 +10,7 @@ const ABI = [
   "function checkIn(string studentId)",
   "function getSessionCount(uint256 sessionId) view returns (uint256)",
   "function hasCheckedIn(uint256 sessionId, string studentId) view returns (bool)",
+  "function getAttendance(uint256 sessionId) view returns (tuple(address student,uint256 timestamp,string studentId)[])",
   "event SessionStarted(uint256 sessionId, address admin, uint256 timestamp)",
   "event CheckedIn(uint256 sessionId, string studentId, address student, uint256 timestamp)",
 ];
@@ -27,6 +26,33 @@ function shortHash(h) {
 function copyToClipboard(text) {
   if (!text) return;
   navigator.clipboard?.writeText(text);
+}
+
+function formatTime(ts) {
+  if (!ts) return "—";
+  const ms = Number(ts) * 1000;
+  return new Date(ms).toLocaleString();
+}
+
+function downloadCsv(filename, rows) {
+  const header = ["StudentID", "Wallet", "Timestamp", "DateTime"];
+  const lines = [header.join(",")];
+
+  for (const r of rows) {
+    const sid = `"${String(r.studentId).replaceAll('"', '""')}"`;
+    const wallet = r.student;
+    const ts = Number(r.timestamp);
+    const dt = `"${formatTime(ts)}"`;
+    lines.push([sid, wallet, ts, dt].join(","));
+  }
+
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function Toast({ toast, onClose }) {
@@ -73,7 +99,10 @@ export default function App() {
   const [currentSessionId, setCurrentSessionId] = useState(0);
   const [sessionCount, setSessionCount] = useState(null);
 
-  // student form
+  // attendance list (teacher view)
+  const [rows, setRows] = useState([]);
+
+  // student
   const [studentId, setStudentId] = useState("");
   const [hasChecked, setHasChecked] = useState(null);
 
@@ -95,9 +124,7 @@ export default function App() {
     setToast({ type, title, message });
   }
 
-  function etherscanBase() {
-    return "https://sepolia.etherscan.io";
-  }
+  const etherscanBase = "https://sepolia.etherscan.io";
 
   async function ensureSepolia() {
     if (!hasMM) return false;
@@ -131,7 +158,21 @@ export default function App() {
     return new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
   }
 
-  async function refreshInfo() {
+  async function loadAttendanceList(sessionId) {
+    const c = await getContractRead();
+    const list = await c.getAttendance(sessionId);
+    // list items are objects: { student, timestamp, studentId }
+    const normalized = list.map((x) => ({
+      student: x.student,
+      timestamp: Number(x.timestamp),
+      studentId: x.studentId,
+    }));
+    // newest first
+    normalized.sort((a, b) => b.timestamp - a.timestamp);
+    setRows(normalized);
+  }
+
+  async function refreshInfo(loadList = true) {
     if (!provider) return;
     try {
       if (!(await ensureSepolia())) return;
@@ -139,15 +180,18 @@ export default function App() {
       const c = await getContractRead();
       const a = await c.admin();
       const sid = await c.currentSessionId();
+      const sidNum = Number(sid);
 
       setAdminAddr(a);
-      setCurrentSessionId(Number(sid));
+      setCurrentSessionId(sidNum);
 
-      if (Number(sid) > 0) {
-        const cnt = await c.getSessionCount(sid);
+      if (sidNum > 0) {
+        const cnt = await c.getSessionCount(sidNum);
         setSessionCount(Number(cnt));
+        if (loadList) await loadAttendanceList(sidNum);
       } else {
         setSessionCount(null);
+        setRows([]);
       }
     } catch {
       // silent
@@ -182,12 +226,11 @@ export default function App() {
 
   // refresh when account/provider changes
   useEffect(() => {
-    refreshInfo();
+    refreshInfo(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account, provider]);
 
-  const isTeacher =
-    adminAddr && account && adminAddr.toLowerCase() === account.toLowerCase();
+  const isTeacher = adminAddr && account && adminAddr.toLowerCase() === account.toLowerCase();
 
   async function startSession() {
     if (!provider) return notify("error", "MetaMask not found");
@@ -207,7 +250,7 @@ export default function App() {
 
       setStatus("Session started ✅");
       notify("success", "Session started", "Teacher started a new class session.");
-      await refreshInfo();
+      await refreshInfo(true);
     } catch (e) {
       const msg = e?.shortMessage || e?.reason || e?.message || "Start session failed.";
       setStatus(msg);
@@ -259,44 +302,11 @@ export default function App() {
       setStudentId("");
       setHasChecked(null);
 
-      await refreshInfo();
+      await refreshInfo(true);
     } catch (e) {
       const msg = e?.shortMessage || e?.reason || e?.message || "Transaction failed.";
       setStatus(msg);
       notify("error", "Transaction failed", msg);
-    } finally {
-      setLoading(false);
-      statusRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
-    }
-  }
-
-  async function loadSessionCount() {
-    if (!provider) return notify("error", "MetaMask not found");
-    if (!(await ensureSepolia())) return;
-
-    try {
-      setLoading(true);
-      setStatus("Reading session count…");
-
-      const c = await getContractRead();
-      const sid = await c.currentSessionId();
-      const sidNum = Number(sid);
-
-      if (sidNum === 0) {
-        setStatus("Session not started.");
-        notify("warn", "Session not started", "Teacher must click Start Session first.");
-        return;
-      }
-
-      const cnt = await c.getSessionCount(sid);
-      setSessionCount(Number(cnt));
-
-      setStatus("Loaded ✅");
-      notify("success", "Loaded", `Session ${sidNum} total: ${Number(cnt)}`);
-    } catch (e) {
-      const msg = e?.shortMessage || e?.reason || e?.message || "Read failed.";
-      setStatus(msg);
-      notify("error", "Read failed", msg);
     } finally {
       setLoading(false);
       statusRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
@@ -322,7 +332,7 @@ export default function App() {
               <span className="opacity-90">App</span>
             </h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-              Choice A: MetaMask login • Teacher starts session • Students check-in
+              Teacher starts session • Students check-in • Teacher downloads CSV
             </p>
           </div>
 
@@ -382,7 +392,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Teacher action */}
+          {/* Teacher actions */}
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <button
               onClick={startSession}
@@ -392,16 +402,29 @@ export default function App() {
               {loading ? "Working…" : "Start Session (Teacher Only)"}
             </button>
 
-            <button
-              onClick={loadSessionCount}
-              disabled={loading}
-              className="rounded-2xl border border-slate-200 bg-white/80 px-5 py-3 text-sm font-bold text-slate-800 shadow-sm hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
-            >
-              Get Session Count (read)
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => refreshInfo(true)}
+                disabled={loading}
+                className="rounded-2xl border border-slate-200 bg-white/80 px-5 py-3 text-sm font-bold text-slate-800 shadow-sm hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+              >
+                Refresh
+              </button>
+
+              <button
+                onClick={() => {
+                  if (currentSessionId > 0) downloadCsv(`chaincheck_session_${currentSessionId}.csv`, rows);
+                  else notify("warn", "No session", "Start a session first.");
+                }}
+                disabled={!isTeacher || currentSessionId === 0}
+                className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Export CSV (Teacher)
+              </button>
+            </div>
           </div>
 
-          {/* Student action */}
+          {/* Student actions */}
           <div className="mt-6">
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Student ID</label>
             <div className="mt-2 flex flex-col gap-3 sm:flex-row">
@@ -415,7 +438,7 @@ export default function App() {
               <button
                 onClick={checkIn}
                 disabled={loading || !account}
-                className="rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-2xl bg-cyan-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-cyan-500/20 hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? "Working…" : "Check In"}
               </button>
@@ -428,7 +451,7 @@ export default function App() {
             ) : null}
           </div>
 
-          {/* Status */}
+          {/* Status + links */}
           <div
             ref={statusRef}
             className="mt-5 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm shadow-sm dark:border-white/10 dark:bg-white/5"
@@ -446,7 +469,7 @@ export default function App() {
                       TX: {shortHash(lastTx)}
                     </span>
                     <a
-                      href={`${etherscanBase()}/tx/${lastTx}`}
+                      href={`${etherscanBase}/tx/${lastTx}`}
                       target="_blank"
                       rel="noreferrer"
                       className="rounded-xl bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-500"
@@ -457,7 +480,7 @@ export default function App() {
                 ) : null}
 
                 <a
-                  href={`${etherscanBase()}/address/${CONTRACT_ADDRESS}`}
+                  href={`${etherscanBase}/address/${CONTRACT_ADDRESS}`}
                   target="_blank"
                   rel="noreferrer"
                   className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-xs font-semibold hover:bg-slate-50 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
@@ -477,10 +500,52 @@ export default function App() {
               </div>
             </div>
           </div>
+        </div>
 
-          <p className="mt-4 text-xs text-slate-600 dark:text-slate-400">
-            Teacher starts a session → students check in once per session → teacher can start a new session anytime.
-          </p>
+        {/* Teacher Attendance List */}
+        <div className="mt-6 rounded-3xl border border-slate-200 bg-white/70 p-6 shadow-xl backdrop-blur dark:border-white/10 dark:bg-white/5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold">Attendance List (Current Session)</h2>
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                Visible to everyone, but CSV export is teacher-only.
+              </p>
+            </div>
+            <span className="rounded-2xl border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-200">
+              Session {currentSessionId || 0}
+            </span>
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs uppercase text-slate-500 dark:text-slate-400">
+                <tr>
+                  <th className="py-2 pr-3">#</th>
+                  <th className="py-2 pr-3">Student ID</th>
+                  <th className="py-2 pr-3">Wallet</th>
+                  <th className="py-2 pr-3">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 ? (
+                  <tr>
+                    <td className="py-4 text-slate-600 dark:text-slate-300" colSpan={4}>
+                      No records yet. Start session then check in.
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((r, idx) => (
+                    <tr key={`${r.student}-${r.timestamp}-${idx}`} className="border-t border-slate-200/60 dark:border-white/10">
+                      <td className="py-3 pr-3 text-slate-500">{idx + 1}</td>
+                      <td className="py-3 pr-3 font-semibold">{r.studentId}</td>
+                      <td className="py-3 pr-3 font-mono">{shortAddr(r.student)}</td>
+                      <td className="py-3 pr-3 text-slate-600 dark:text-slate-300">{formatTime(r.timestamp)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="mt-10 text-center text-xs text-slate-500 dark:text-slate-400">
