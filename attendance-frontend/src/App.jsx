@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 
-const CONTRACT_ADDRESS = "0x296D128012Ecca1924803e4Da3933cCf9e2EB45D";
+const CONTRACT_ADDRESS = "0xB8632625dE63b8E792b4487d86cBD8027d8Ad252";
 
 const ABI = [
   "function admin() view returns (address)",
